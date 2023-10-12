@@ -591,6 +591,10 @@ def convert_sd_to_sd2(value: float, uncertainty_type: str) -> float:
     if uncertainty_type == "Normal":
         # normal distribution
         return value ** 2
+    
+    if uncertainty_type == "Triangular":
+        # triangular distribution
+        return value
 
     if uncertainty_type in ["not defined", "Unspecified"]:
         # normal distribution
