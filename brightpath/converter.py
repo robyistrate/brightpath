@@ -94,6 +94,9 @@ class Converter:
             dataset_name = ""
             is_a_waste_treatment_activity = is_activity_waste_treatment(activity, database)
 
+            prod_exchange = find_production_exchange(activity)
+            prod_exchange.update({"simapro category": ""})
+            
             for field in self.simapro_fields:
 
                 if (
