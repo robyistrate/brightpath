@@ -69,6 +69,41 @@ class BrightwayConverter:
         self.export_dir = Path(export_dir) or Path.cwd()
 
 
+    def get_simapro_biosphere_flow(
+            self, ei_exc_name, exc_compartment, exc_subcompartment, activity_location) -> str:
+        # Get the name of a Simapro biosphere flow based on ecoinvent
+        # exchange name and exchange category
+
+        # Regionalized biosphere flows are identified; useful 
+        # for water as natural resource or emissions to air.
+
+        # Get list of Simapro exchanges considerying category
+        simapro_exc_list = [se for se in self.simapro_biosphere 
+                            if se[2] == ei_exc_name
+                            and se[0] == exc_compartment]
+        
+        # If exchange name missing, use ecoinvent exchange name
+        if len(simapro_exc_list) == 0:
+            simapro_biosphere_flow = ei_exc_name
+        
+        # Check if exchange is regionalized
+        if len(simapro_exc_list) == 1:
+            simapro_biosphere_flow = simapro_exc_list[0][1]
+
+        elif len(simapro_exc_list) > 1:
+            # Check that activity location and sub-compartment is in Simapro name
+            exc_candidate = [se for se in simapro_exc_list 
+                            if se[2] == ei_exc_name
+                            and activity_location in se[1]
+                            and exc_subcompartment in se[1]]
+            if len(exc_candidate) == 1:
+                simapro_biosphere_flow = exc_candidate[0][1]
+            else:
+                raise ValueError("Cannot find appropiate biosphere flow for exchange:", ei_exc_name)
+        
+        return simapro_biosphere_flow
+
+
     def format_inventories_for_simapro(self, database: str):
         """
         Format inventories to Simapro format.
@@ -261,7 +296,7 @@ class BrightwayConverter:
                                 "{:.3E}".format(prod_exchange["amount"]),
                                 "100",
                                 "not defined",
-                                "this is the category", #category,
+                                category,
                                 "not defined",
                             ],
                             []
@@ -320,13 +355,18 @@ class BrightwayConverter:
                         u_type = get_simapro_uncertainty_type(exc.get("uncertainty type"))
 
                         if len(exc["categories"]) > 1:
+                            exc_compartment = exc["categories"][0]
                             sub_compartment = self.simapro_subcompartment[exc["categories"][1]]
                         else:
+                            exc_compartment = exc["categories"]
                             sub_compartment = ""
 
+                        simapro_biosphere_flow = self.get_simapro_biosphere_flow(
+                                exc['name'], exc_compartment, sub_compartment, activity["location"])
+                        
                         rows.append(
                             [
-                                f"{self.simapro_biosphere.get(exc['name'], exc['name'])}",
+                                simapro_biosphere_flow, #f"{self.simapro_biosphere.get(exc['name'], exc['name'])}",
                                 sub_compartment,
                                 self.simapro_units[exc["unit"]],
                                 "{:.3E}".format(exc["amount"]),
@@ -351,13 +391,18 @@ class BrightwayConverter:
                         u_type = get_simapro_uncertainty_type(exc.get("uncertainty type"))
 
                         if len(exc["categories"]) > 1:
+                            exc_compartment = exc["categories"][0]
                             sub_compartment = self.simapro_subcompartment[exc["categories"][1]]
                         else:
+                            exc_compartment = exc["categories"][0]
                             sub_compartment = ""
+                        
+                        simapro_biosphere_flow = self.get_simapro_biosphere_flow(
+                                exc['name'], exc_compartment, sub_compartment, activity["location"])
 
                         rows.append(
                             [
-                                f"{self.simapro_biosphere.get(exc['name'], exc['name'])}",
+                                simapro_biosphere_flow, #f"{self.simapro_biosphere.get(exc['name'], exc['name'])}",
                                 sub_compartment,
                                 self.simapro_units[exc["unit"]],
                                 "{:.3E}".format(exc["amount"]),

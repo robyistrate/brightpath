@@ -41,7 +41,7 @@ def get_simapro_biosphere() -> Dict[str, str]:
     for d in data:
         dict_bio[d[2]] = d[1]
 
-    return dict_bio
+    return data#dict_bio
 
 
 def get_simapro_subcompartments() -> Dict[str, str]:
