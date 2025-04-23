@@ -95,7 +95,7 @@ class BrightwayConverter:
             is_a_waste_treatment_activity = is_activity_waste_treatment(activity, database)
 
             prod_exchange = find_production_exchange(activity)
-            prod_exchange.update({"simapro category": ""})
+            prod_exchange.update({"simapro category": self.metadata["system description"]["category"]})
             
             for field in self.simapro_fields:
                 if (
