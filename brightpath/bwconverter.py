@@ -1,5 +1,5 @@
 """
-This module contains the class Converter, which is used to convert
+This module contains the class BrightwayConverter, which is used to convert
 Brightway2 inventories to Simapro CSV files.
 """
 
@@ -34,7 +34,7 @@ import csv
 from pathlib import Path
 
 
-class Converter:
+class BrightwayConverter:
     """
     Convert Brightway2 inventories to Simapro CSV files.
     """
@@ -98,7 +98,6 @@ class Converter:
             prod_exchange.update({"simapro category": ""})
             
             for field in self.simapro_fields:
-
                 if (
                         is_a_waste_treatment_activity is True
                         and field == "Products"
@@ -143,8 +142,11 @@ class Converter:
                     string = ""
                     if activity.get("comment"):
                         string = f"{round_floats_in_string(activity['comment'])} "
+
                     if activity.get("source"):
                         string += f"Source: {activity['source']} "
+                    # remove line breaks in string
+                    string = string.replace("\n", " ")
                     rows.extend(
                         [
                             [string],
@@ -344,7 +346,7 @@ class Converter:
 
                         if exc["name"].lower() == "water":
                             exc["unit"] = "kilogram"
-                            exc["amount"] /= 1000
+                            exc["amount"] *= 1000
 
                         u_type = get_simapro_uncertainty_type(exc.get("uncertainty type"))
 
