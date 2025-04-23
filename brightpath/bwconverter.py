@@ -261,7 +261,7 @@ class BrightwayConverter:
                                 "{:.3E}".format(prod_exchange["amount"]),
                                 "100",
                                 "not defined",
-                                category,
+                                "this is the category", #category,
                                 "not defined",
                             ],
                             []
