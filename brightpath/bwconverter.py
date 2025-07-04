@@ -11,6 +11,7 @@ from .utils import (
     import_bw_inventories,
     get_simapro_technosphere,
     get_simapro_biosphere,
+    get_ef31_simapro_elementary_flows,
     get_simapro_subcompartments,
     load_inventory_metadata,
     is_activity_waste_treatment,
@@ -32,7 +33,7 @@ from .utils import (
 import datetime
 import csv
 from pathlib import Path
-
+import re
 
 class BrightwayConverter:
     """
@@ -58,6 +59,7 @@ class BrightwayConverter:
         self.simapro_headers = get_simapro_headers()
         self.simapro_technosphere = get_simapro_technosphere()
         self.simapro_biosphere = get_simapro_biosphere()
+        self.ef31_simapro_elementary_flows = get_ef31_simapro_elementary_flows()
         self.simapro_subcompartment = get_simapro_subcompartments()
         self.ei_version = ecoinvent_version
 
@@ -70,38 +72,101 @@ class BrightwayConverter:
 
 
     def get_simapro_biosphere_flow(
-            self, ei_exc_name, exc_compartment, exc_subcompartment, activity_location) -> str:
-        # Get the name of a Simapro biosphere flow based on ecoinvent
-        # exchange name and exchange category
+            self, ei_exc_name, ei_compartment, ei_subcompartment, ds_location) -> dict:
+        """
+        Get the name of a Simapro biosphere flow based on ecoinvent
+        exchange name and exchange category
 
-        # Regionalized biosphere flows are identified; useful 
-        # for water as natural resource or emissions to air.
-
-        # Get list of Simapro exchanges considerying category
-        simapro_exc_list = [se for se in self.simapro_biosphere 
-                            if se[2] == ei_exc_name
-                            and se[0] == exc_compartment]
+        Regionalized biosphere flows are identified; useful 
+        for water as natural resource or emissions to air.
+        """
+        # Mapping of ecoinvent compartments to SimaPro compartments
+        compartment_mapping = {
+            "air": "Air",
+            "water": "Water",
+            "soil": "Soil",
+            "natural resource": "Raw"
+        }
         
-        # If exchange name missing, use ecoinvent exchange name
-        if len(simapro_exc_list) == 0:
-            simapro_biosphere_flow = ei_exc_name
-        
-        # Check if exchange is regionalized
-        if len(simapro_exc_list) == 1:
-            simapro_biosphere_flow = simapro_exc_list[0][1]
+        # Get SimaPro compartments and subcompartments
+        simapro_compartment = compartment_mapping[ei_compartment]
+        try:
+            simapro_subcompartment = self.simapro_subcompartment[ei_subcompartment]
+        except KeyError:
+            simapro_subcompartment = "(unspecified)"
 
-        elif len(simapro_exc_list) > 1:
-            # Check that activity location and sub-compartment is in Simapro name
-            exc_candidate = [se for se in simapro_exc_list 
-                            if se[2] == ei_exc_name
-                            and activity_location in se[1]
-                            and exc_subcompartment in se[1]]
-            if len(exc_candidate) == 1:
-                simapro_biosphere_flow = exc_candidate[0][1]
+        # Determine search names
+
+        # Handling some special cases where the name is different.
+        # Name in ecoinvent: Name in simapro
+        special_name_cases = {
+            "Particulate Matter, < 2.5 um": "Particulates, < 2.5 um",
+            "Particulate Matter, > 2.5 um and < 10um": "Particulates, > 2.5 um, and < 10um",
+            "Particulate Matter, > 10 um": "Particulates, > 2.5 um, and < 10um", # PM > 10 um don't exist in SimaPro nomenclature
+            "Nitrogen": "Nitrogen, total",
+            "Dioxins, measured as 2,3,7,8-tetrachlorodibenzo-p-dioxin": "Dioxin, 2,3,7,8 Tetrachlorodibenzo-p-",
+            "Ammonium": "Ammonium, ion",
+            "Water, well, in ground": "Water, well"
+        }
+
+        roman_numerals = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X']
+        roman_numerals_patterns = [re.compile(rf'\b{rn}\b') for rn in roman_numerals]
+
+        # Flows with "ion" are named as "Copper ion" in ecoinvent and as "Copper, ion" in SimaPro
+        if re.search(r'\bion\b', ei_exc_name):   
+            search_ef_name = ei_exc_name.replace(" ion", ", ion")
+
+        # Flows with oxidation state like Silver I are named as Silver (I) in SimaPro
+        elif any(p.search(ei_exc_name) for p in roman_numerals_patterns):
+            search_ef_name = re.sub(r'^(.*)\s+(I{1,3}|IV|V|VI{0,3}|IX|X)$', r'\1 (\2)', ei_exc_name)
+
+        # Handling the name for special cases:
+        elif ei_exc_name in special_name_cases:
+            search_ef_name = special_name_cases[ei_exc_name]
+
+        # SimaPro uses "biogenic" instead of "non-fossil"
+        elif "non-fossil" in ei_exc_name:
+            search_ef_name = ei_exc_name.replace("non-fossil", "biogenic")
+
+        else:
+            search_ef_name = ei_exc_name
+
+        simapro_ef_match = []
+
+        # Let's check if there is a regionalized flow
+        for subcomp in [simapro_subcompartment, "(unspecified)"]:
+            match = [
+                ff for ff in self.ef31_simapro_elementary_flows
+                if ff["name"] == f"{search_ef_name}, {ds_location}"
+                and ff["compartment"] == simapro_compartment
+                and ff["subcompartment"] == subcomp
+            ]
+            if match:
+                simapro_ef_match = match[0]
+                break 
+        
+        # If no regionalized flows exist, try to match exact name
+        if not simapro_ef_match:
+            for subcomp in [simapro_subcompartment, "(unspecified)"]:
+                match = [
+                    ff for ff in self.ef31_simapro_elementary_flows
+                    if ff["name"] == search_ef_name
+                    and ff["compartment"] == simapro_compartment
+                    and ff["subcompartment"] == subcomp
+                ]
+                if match:
+                    simapro_ef_match = match[0]
+                    break
+        
+        # If match doesn't exist, use ecoinvent elementary flow
+        if not simapro_ef_match:
+            print("Cannot find appropiate elementary flow for exchange:", (ei_exc_name, ei_compartment, ei_subcompartment))
+            return {'name': ei_exc_name, 'compartment': simapro_compartment, "subcompartment": ""}
+        else:
+            if simapro_ef_match["subcompartment"] == "(unspecified)":
+                return {'name': simapro_ef_match["name"], 'compartment': simapro_ef_match["compartment"], "subcompartment": ""}
             else:
-                raise ValueError("Cannot find appropiate biosphere flow for exchange:", ei_exc_name)
-        
-        return simapro_biosphere_flow
+                return {'name': simapro_ef_match["name"], 'compartment': simapro_ef_match["compartment"], "subcompartment": simapro_ef_match["subcompartment"]}
 
 
     def format_inventories_for_simapro(self, database: str):
@@ -355,19 +420,20 @@ class BrightwayConverter:
                         u_type = get_simapro_uncertainty_type(exc.get("uncertainty type"))
 
                         if len(exc["categories"]) > 1:
-                            exc_compartment = exc["categories"][0]
-                            sub_compartment = self.simapro_subcompartment[exc["categories"][1]]
+                            ei_compartment = exc["categories"][0]
+                            ei_subcompartment = exc["categories"][1]
+                          #  sub_compartment = self.simapro_subcompartment[exc["categories"][1]]
                         else:
-                            exc_compartment = exc["categories"]
-                            sub_compartment = ""
+                            ei_compartment = exc["categories"]
+                            ei_subcompartment = ""
 
                         simapro_biosphere_flow = self.get_simapro_biosphere_flow(
-                                exc['name'], exc_compartment, sub_compartment, activity["location"])
+                                exc['name'], ei_compartment, ei_subcompartment, activity["location"])
                         
                         rows.append(
                             [
-                                simapro_biosphere_flow, #f"{self.simapro_biosphere.get(exc['name'], exc['name'])}",
-                                sub_compartment,
+                                simapro_biosphere_flow["name"], #f"{self.simapro_biosphere.get(exc['name'], exc['name'])}",
+                                simapro_biosphere_flow["subcompartment"], #sub_compartment,
                                 self.simapro_units[exc["unit"]],
                                 "{:.3E}".format(exc["amount"]),
                                 u_type,
@@ -391,19 +457,20 @@ class BrightwayConverter:
                         u_type = get_simapro_uncertainty_type(exc.get("uncertainty type"))
 
                         if len(exc["categories"]) > 1:
-                            exc_compartment = exc["categories"][0]
-                            sub_compartment = self.simapro_subcompartment[exc["categories"][1]]
+                            ei_compartment = exc["categories"][0]
+                            ei_subcompartment = exc["categories"][1]
+                           # sub_compartment = self.simapro_subcompartment[exc["categories"][1]]
                         else:
-                            exc_compartment = exc["categories"][0]
-                            sub_compartment = ""
+                            ei_compartment = exc["categories"][0]
+                            ei_subcompartment = ""
                         
                         simapro_biosphere_flow = self.get_simapro_biosphere_flow(
-                                exc['name'], exc_compartment, sub_compartment, activity["location"])
+                                exc['name'], ei_compartment, ei_subcompartment, activity["location"])
 
                         rows.append(
                             [
-                                simapro_biosphere_flow, #f"{self.simapro_biosphere.get(exc['name'], exc['name'])}",
-                                sub_compartment,
+                                simapro_biosphere_flow['name'], #f"{self.simapro_biosphere.get(exc['name'], exc['name'])}",
+                                simapro_biosphere_flow['subcompartment'], #sub_compartment,
                                 self.simapro_units[exc["unit"]],
                                 "{:.3E}".format(exc["amount"]),
                                 u_type,
@@ -501,7 +568,7 @@ class BrightwayConverter:
         filepath = self.export_dir / f"simapro_{database}_{datetime.datetime.today().strftime('%d-%m-%Y')}.csv"
 
         with open(filepath, "w", newline="", encoding="utf-8") as csvFile:
-            writer = csv.writer(csvFile, delimiter=";")
+            writer = csv.writer(csvFile, delimiter=",")
             for row in data:
                 writer.writerow(row)
         csvFile.close()
