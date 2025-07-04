@@ -41,8 +41,22 @@ def get_simapro_biosphere() -> Dict[str, str]:
     for d in data:
         dict_bio[d[2]] = d[1]
 
-    return data#dict_bio
+    return dict_bio
 
+def get_ef31_simapro_elementary_flows():
+    # Load the elementary flows used in EF3.1 adapted in simapro
+
+    filename = "ef31_simapro_elementary_flows.json"
+    filepath = DATA_DIR / "export" / filename
+    if not filepath.is_file():
+        raise FileNotFoundError(
+            "The dictionary of biosphere flow match "
+            "between ecoinvent and Simapro could not be found."
+        )
+    with open(filepath, encoding="utf-8") as json_file:
+        data = json.load(json_file)
+
+    return data
 
 def get_simapro_subcompartments() -> Dict[str, str]:
     # Load the matching dictionary between ecoinvent and Simapro subcompartments
