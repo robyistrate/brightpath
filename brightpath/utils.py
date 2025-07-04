@@ -12,6 +12,7 @@ from pathlib import Path
 from voluptuous import Schema, Required, Optional, Url
 from prettytable import PrettyTable
 import numpy as np
+import pandas as pd
 import re
 import logging
 
@@ -534,7 +535,7 @@ def format_exchange_name(name: str, reference_product: str, location: str, unit:
     if database == "ecoinvent":
         # first letter of `name` should be capitalized
         reference_product = reference_product[0].upper() + reference_product[1:]
-        name = name[0].upper() + name[1:]
+     #   name = name[0].upper() + name[1:]
 
         exchange_name = (
             f"{reference_product} {{{location}}}| {name}"
