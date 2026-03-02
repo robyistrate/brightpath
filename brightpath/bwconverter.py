@@ -106,31 +106,49 @@ class BrightwayConverter:
             "Nitrogen": "Nitrogen, total",
             "Dioxins, measured as 2,3,7,8-tetrachlorodibenzo-p-dioxin": "Dioxin, 2,3,7,8 Tetrachlorodibenzo-p-",
             "Ammonium": "Ammonium, ion",
-            "Water, well, in ground": "Water, well"
+            "Water, well, in ground": "Water, well",
+            'Hydrocarbons, chlorinated': "Hydrocarbons, unspecified",
+            'Tin ion': "Tin",
+            "Titanium ion": "Titanium"
         }
+
+        special_regions = {
+            'GCC': "IAI Area, Gulf Cooperation Council",
+            'South America': "IAI Area, South America",
+            'North America': "IAI Area, North America, without Quebec",
+            'Europe': "Europe without Switzerland",
+            'US-WECC': "WECC, US only",
+            'Rest-of-Asia': "IAI Area, Asia, without China and GCC",
+            'Russia and Rest-of-Europe': "IAI Area, Russia & RER w/o EU27 & EFTA",
+            'Oceania': "UN-OCEANIA",
+            'Africa': "IAI Area, Africa"
+            }
 
         roman_numerals = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X']
         roman_numerals_patterns = [re.compile(rf'\b{rn}\b') for rn in roman_numerals]
 
+        # Handling the name for special cases:
+        if ei_exc_name in special_name_cases:
+            search_ef_name = special_name_cases[ei_exc_name]
+
+        # SimaPro uses "biogenic" instead of "non-fossil"
+        elif "non-fossil" in ei_exc_name:
+            search_ef_name = ei_exc_name.replace("non-fossil", "biogenic")
+        
         # Flows with "ion" are named as "Copper ion" in ecoinvent and as "Copper, ion" in SimaPro
-        if re.search(r'\bion\b', ei_exc_name):   
+        elif re.search(r'\bion\b', ei_exc_name):   
             search_ef_name = ei_exc_name.replace(" ion", ", ion")
 
         # Flows with oxidation state like Silver I are named as Silver (I) in SimaPro
         elif any(p.search(ei_exc_name) for p in roman_numerals_patterns):
             search_ef_name = re.sub(r'^(.*)\s+(I{1,3}|IV|V|VI{0,3}|IX|X)$', r'\1 (\2)', ei_exc_name)
 
-        # Handling the name for special cases:
-        elif ei_exc_name in special_name_cases:
-            search_ef_name = special_name_cases[ei_exc_name]
-
-        # SimaPro uses "biogenic" instead of "non-fossil"
-        elif "non-fossil" in ei_exc_name:
-            search_ef_name = ei_exc_name.replace("non-fossil", "biogenic")
-
         else:
             search_ef_name = ei_exc_name
 
+        if ds_location in special_regions:
+            ds_location = special_regions[ds_location]
+            
         simapro_ef_match = []
 
         # Let's check if there is a regionalized flow
@@ -195,8 +213,18 @@ class BrightwayConverter:
             is_a_waste_treatment_activity = is_activity_waste_treatment(activity, database)
 
             prod_exchange = find_production_exchange(activity)
-            prod_exchange.update({"simapro category": self.metadata["system description"]["category"]})
+
+            # ONLY FOR OUR METALS PROJECT:
+            # Get SimaPro category for the LCIs based on worksheet name
+
+           # prod_exchange.update({"simapro category": self.metadata["system description"]["category"]})
             
+            if "Market" in activity['worksheet name']:
+                simapro_category_lci = self.metadata["system description"]["category"] + "\Market"
+            else:
+                simapro_category_lci = f"{self.metadata['system description']['category']}\\{activity['worksheet name'].split('_', 1)[0]}"
+            prod_exchange.update({"simapro category": simapro_category_lci})
+
             for field in self.simapro_fields:
                 if (
                         is_a_waste_treatment_activity is True
@@ -381,7 +409,7 @@ class BrightwayConverter:
                     techno_excs = list(filter(lambda x: is_blacklisted(x, database) is False, list(techno_excs)))
                     techno_excs = check_exchanges_for_conversion(techno_excs, database)
 
-                    for exc in filter(lambda x: is_a_waste_treatment(x["name"], database=database) is not True, techno_excs):
+                    for exc in filter(lambda x: is_a_waste_treatment(x["name"], x["amount"], database=database) is not True, techno_excs):
                         exchange_name = format_exchange_name(
                             exc["name"],
                             exc["reference product"],
@@ -488,7 +516,7 @@ class BrightwayConverter:
                     techno_excs = list(filter(lambda x: is_blacklisted(x, database) is False, techno_excs))
                     techno_excs = check_exchanges_for_conversion(techno_excs, database)
 
-                    for exc in filter(lambda x: is_a_waste_treatment(x["name"], database=database) is True, techno_excs):
+                    for exc in filter(lambda x: is_a_waste_treatment(x["name"], x["amount"], database=database) is True, techno_excs):
 
                         # In SimaPro, waste inputs are positive numbers
                         if exc["amount"] < 0:
