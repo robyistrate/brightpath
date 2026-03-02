@@ -452,15 +452,16 @@ def is_activity_waste_treatment(activity: dict, database: str) -> bool:
         if activity["type"] == "waste treatment":
             return True
 
-    if is_a_waste_treatment(activity["name"], database) is True:
+    if is_a_waste_treatment(activity["name"], activity["amount"], database) is True:
         return True
 
     return False
 
 
-def is_a_waste_treatment(name: str, database: str) -> bool:
+def is_a_waste_treatment(name: str, amount: float, database: str) -> bool:
     """
     Detect if name contains typical to waste treatment.
+    For ecoinvent, also check if the sign is negative
     :param name: exchange name
     :param database: database to link to
     :return: bool.
@@ -474,7 +475,7 @@ def is_a_waste_treatment(name: str, database: str) -> bool:
     if any(term.lower() in name.lower() for term in WASTE_TERMS) is True:
         if any(term.lower() in name.lower() for term in NOT_WASTE_TERMS) is False:
             if database == "ecoinvent":
-                if not any(term.lower() in name.lower() for term in ecoinvent_exceptions["waste"]):
+                if not any(term.lower() in name.lower() for term in ecoinvent_exceptions["waste"]) and amount < 0:
                     return True
                 else:
                     return False
